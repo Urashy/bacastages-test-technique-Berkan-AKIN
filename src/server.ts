@@ -23,7 +23,7 @@ app.listen(PORT, () => {
   console.log('  GET  /api/sessions');
   console.log('  GET  /api/sessions/:id');
   console.log('  POST /api/sessions/:id/participants');
-  console.log('  GET  /api/sessions/:id/stats  (à implémenter)\n');
+  console.log('  GET  /api/sessions/:id/stats\n');
 });
 
 export default app;
