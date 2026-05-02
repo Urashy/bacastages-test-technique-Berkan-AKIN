@@ -35,15 +35,21 @@ router.post('/:id/participants', async (req, res, next) => {
       return res.status(409).json({ error: 'Cette session est complète.' });
     }
 
-    const participant = await prisma.participant.create({
-      data: {
-        sessionId,
-        firstName,
-        lastName,
-        birthDate: new Date(birthDate),
-        originSchoolId: originSchoolId ?? null,
-      },
-    });
+    const [participant] = await prisma.$transaction([
+      prisma.participant.create({
+        data: {
+          sessionId,
+          firstName,
+          lastName,
+          birthDate: new Date(birthDate),
+          originSchoolId: originSchoolId ?? null,
+        },
+      }),
+      prisma.session.update({
+        where: { id: sessionId },
+        data: { allocatedPlaces: { increment: 1 } },
+      }),
+    ]);
 
     res.status(201).json({ data: participant });
   } catch (error) {

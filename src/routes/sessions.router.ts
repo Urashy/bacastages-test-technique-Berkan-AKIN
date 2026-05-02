@@ -13,19 +13,16 @@ router.get('/', async (req, res, next) => {
     const sessions = await prisma.session.findMany({
       where: status ? { status: status as SessionStatus } : undefined,
       orderBy: { startDate: 'asc' },
+      include: {
+        hostSchool: true,
+        _count: { select: { participants: true } },
+      },
     });
 
-    const result = await Promise.all(
-      sessions.map(async (session) => {
-        const school = await prisma.school.findUnique({
-          where: { id: session.hostSchoolId },
-        });
-        const participantCount = await prisma.participant.count({
-          where: { sessionId: session.id },
-        });
-        return { ...session, school, participantCount };
-      })
-    );
+    const result = sessions.map((session) => {
+      const { _count, hostSchool, ...rest } = session;
+      return { ...rest, school: hostSchool, participantCount: _count.participants };
+    });
 
     res.json({ data: result, total: result.length });
   } catch (error) {
@@ -46,6 +43,9 @@ router.get('/:id', async (req, res, next) => {
       },
     });
 
+    if (!session) {
+      return res.status(404).json({ error: 'Session introuvable.' });
+    }
     res.json({ data: session });
   } catch (error) {
     next(error);
@@ -55,27 +55,71 @@ router.get('/:id', async (req, res, next) => {
 // GET /api/sessions/:id/stats
 router.get('/:id/stats', async (req, res, next) => {
   try {
-    // TODO : implémenter cet endpoint
-    //
-    // Réponse attendue :
-    // {
-    //   sessionId: string,
-    //   totalParticipants: number,
-    //   byStatus: {
-    //     registered: number,
-    //     cancelled: number,
-    //     attended: number,
-    //     absent: number,
-    //   },
-    //   conventionRate: number,   // proportion de participants non-annulés avec une convention VALIDATED
-    //   topOriginSchools: [       // top 3 par nombre de participants non-annulés, ordre décroissant
-    //     { schoolId: string, schoolName: string, count: number }
-    //   ]
-    // }
-    //
-    // Contrainte : pas de requête N+1.
+    const session = await prisma.session.findUnique({
+      where: { id: req.params.id },
+      include: {
+        participants: {
+          include: {
+            originSchool: true,
+            convention: true,
+          },
+        },
+      },
+    });
 
-    res.status(501).json({ error: 'Not implemented' });
+    if (!session) {
+      return res.status(404).json({ error: 'Session introuvable.' });
+    }
+
+    const participants = session.participants;
+
+    const byStatus = {
+      registered: 0,
+      cancelled: 0,
+      attended: 0,
+      absent: 0,
+    };
+    for (const p of participants) {
+      byStatus[p.status.toLowerCase() as keyof typeof byStatus]++;
+    }
+
+    const nonCancelled = participants.filter((p) => p.status !== 'CANCELLED');
+
+    const validatedCount = nonCancelled.filter(
+      (p) => p.convention?.status === 'VALIDATED'
+    ).length;
+    const conventionRate =
+      nonCancelled.length > 0
+        ? Math.round((validatedCount / nonCancelled.length) * 100) / 100
+        : 0;
+
+    const schoolCounts = new Map<string, { schoolName: string; count: number }>();
+    for (const p of nonCancelled) {
+      if (p.originSchool) {
+        const existing = schoolCounts.get(p.originSchool.id);
+        if (existing) {
+          existing.count++;
+        } else {
+          schoolCounts.set(p.originSchool.id, {
+            schoolName: p.originSchool.name,
+            count: 1,
+          });
+        }
+      }
+    }
+
+    const topOriginSchools = Array.from(schoolCounts.entries())
+      .map(([schoolId, { schoolName, count }]) => ({ schoolId, schoolName, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    res.json({
+      sessionId: session.id,
+      totalParticipants: participants.length,
+      byStatus,
+      conventionRate,
+      topOriginSchools,
+    });
   } catch (error) {
     next(error);
   }
