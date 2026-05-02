@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model School {
+  id           String        @id @default(uuid())
+  name         String
+  city         String
+  zipCode      String        @map("zip_code")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  sessions     Session[]     @relation("HostSchool")
+  participants Participant[] @relation("OriginSchool")
+
+  @@map("schools")
+}
+
+model Session {
+  id              String          @id @default(uuid())
+  title           String
+  description     String?
+  hostSchoolId    String          @map("host_school_id")
+  maxCapacity     Int             @map("max_capacity")
+  allocatedPlaces Int             @default(0) @map("allocated_places")
+  startDate       DateTime        @map("start_date")
+  endDate         DateTime        @map("end_date")
+  status          SessionStatus   @default(OPEN)
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+  hostSchool      School          @relation("HostSchool", fields: [hostSchoolId], references: [id])
+  participants    Participant[]
+
+  @@index([status])
+  @@index([hostSchoolId])
+  @@map("sessions")
+}
+
+model Participant {
+  id             String            @id @default(uuid())
+  sessionId      String            @map("session_id")
+  firstName      String            @map("first_name")
+  lastName       String            @map("last_name")
+  birthDate      DateTime          @map("birth_date")
+  status         ParticipantStatus @default(REGISTERED)
+  originSchoolId String?           @map("origin_school_id")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  session        Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  originSchool   School?           @relation("OriginSchool", fields: [originSchoolId], references: [id])
+  convention     Convention?
+
+  @@index([sessionId])
+  @@index([status])
+  @@map("participants")
+}
+
+model Convention {
+  id            String           @id @default(uuid())
+  participantId String           @unique @map("participant_id")
+  status        ConventionStatus @default(PENDING)
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  participant   Participant      @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@map("conventions")
+}
+
+enum SessionStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ParticipantStatus {
+  REGISTERED
+  CANCELLED
+  ATTENDED
+  ABSENT
+}
+
+enum ConventionStatus {
+  PENDING
+  VALIDATED
+  REJECTED
+}
